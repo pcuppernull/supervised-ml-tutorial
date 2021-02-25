@@ -58,7 +58,7 @@ data_clean[data_clean == 999] <- NA #replace "999" ("I don't know" responses) wi
 data_clean <- data_clean %>%
   na.omit() %>% #remove rows with NAs
   mutate(violence_ok = as.factor(if_else(viol2a == 1, 0, 1))) %>% #convert original variable to bivariate response, as described above
-  select(-viol2a) #drop original variable
+  select(-viol2a, -billtax2, -guarinc2, -freemkt2, -freemkt3, -govsize2, -govsize3, -regulate2) #drop some columns
 ```
 
 ## Set Seed and Split into Training and Testing
@@ -81,7 +81,7 @@ training %>%
 ```
 
 
-## Train Learners
+## Learner Types
 
 I am going to demo three different types of learners. There are literally hundreds of possibilities to choose from (check out the `caret` documentation for a full list!). One approach to supervised learning is to test out a bunch of different learners, see which is the most accurate, and then roll with that one!
 
@@ -108,88 +108,133 @@ logit_fit <- train(violence_ok ~ ., #regress violence_ok onto all other predicto
 logit_fit
 
 ```
-The "Accuracy" measure that is returned is from the cross-validated data. To test the prediction accuracy on the holdout data, below I use the model to geenrate new predictions, compare them to the "true" values from the testing data, and see how often we got the prediction right.
+
+The "Accuracy" measure that is returned is from the cross-validated data. To test the prediction accuracy on the holdout data, below I use the model to generate new predictions, compare them to the "true" values from the testing data, and see how often we got the prediction right.
 
 ```{r}
 1 - sum(abs((as.numeric(predict(logit_fit, testing)) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
 ```
 
-So, the logit model makes the correct prediction 87% ofthe time on the testing data. Not bad!
-
-
+So, the logit model makes the correct prediction 87% of the time on the testing data. Not bad!
 
 ### Elastic Net
 
-Elastic Net is another common learner type. 
+Elastic Net is another common learner type. One hyperparameter of elastic net models is "Alpha" - `Caret` automatically runs several iterations of the elastic net model with different values for Alpha. It then shows you the accuracy at each level and will sugggest the most accurate model.
 
 ```{r}
-elastic_fit <- train(violence_ok ~ .,
-                   method = "glmnet",
-                  data = training, 
-                  trControl = fitControl)
+elastic_fit <- train(violence_ok ~ ., #same as before
+                   method = "glmnet", #specify the model type here
+                   data = training, #same as before
+                  #tuneLength = 10 # You can use this argument to test more options of hyperparameter value
+                  trControl = fitControl) #same as before
+
+elastic_fit
 
 elastic_fit$results %>%
-  arrange(-Accuracy)
+  arrange(-Accuracy) #order by the most accurate models
+
+
+```
+
+#### Apply Elastic Net Models to Holdout Data
+
+We're going to do some "hyperparameter tuning", where we test out different values of alpha and lambda, and test each model on the hold out data. The code below makes it a little easier to generate predictions and plot the out-of-sample accuracy.
+
+```{r}
+#Set Range of hyperparameters alpha and lambda. expand.grid creates a DF with a row for each unique combination of hyperparameter values.
+elastic_grid <- expand.grid(.alpha = seq(0, 1, .2),
+                            .lambda = c(.001, .1, 1))
+
+
+elasticFunction <- function(row) { #function to train the model. This is basically the same as above, but only runs 1 set of hyperparameter values at a time.
+  train(violence_ok ~ .,
+                   method = "glmnet",
+                   data = training, 
+                   trControl = fitControl,
+                   tuneGrid = elastic_grid[row,])
+}
+
+###This next step will probably take a few minutes for your computer to run!!
+elastic_models <- map(1:nrow(elastic_grid), elasticFunction) #run the above function for each set of hyperparameter values and save results as a list
+
+elastic_accuracy <- c() # create an empty vector to store the results of the accuracy test below
+
+for (i in 1:length(elastic_models)){ #for loop to take each model, generate predictions, compare them to the true values, and save the results
+
+elastic_accuracy[i] <- 1 - sum(abs((as.numeric(predict(elastic_models[i], testing)[[1]]) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
+  
+}
+
+## Results
+cbind(as.data.frame(elastic_accuracy), elastic_grid)
 ```
 
 
-kNN
+
+### kNN
+
+K Nearest Neighbors, or kNN, is another model type that is somewhat common. To make a classification under kNN, the learner looks for the k most similar observations in the training set to the testing observation on hand. Whichever is the most popuular outcome ofthe k most similar training observations is designated as the prediction for the test observation.
+
+Choosing k is tricky. k of 1 might be too low because you are making a classification based on a single training observation! a k value that is too much might lose some of the nuance in the data.
+
+Here, it is important to do some hyperparameter tuning. We will set a range of possible k values, train a model for each of them, apply each model to the testing data, and see which does best!
+
 ```{r}
-knn_grid <- expand.grid(k = seq(1, 100, 5))
+x_scaled <- data_clean %>%
+  select(-violence_ok) %>%
+  scale() %>%
+  as.data.frame()
+
+data_knn <- cbind(data_clean$violence_ok, x_scaled) %>%
+  rename(violence_ok = `data_clean$violence_ok`)
+
+training_knn <- data_knn[sample,] #save those rows as training
+testing_knn <- data_knn[-sample,]
+
+```
+
+
+```{r}
+knn_grid <- expand.grid(k = seq(1, 100, 5)) 
 
 knn_fit <- train(violence_ok ~ .,
                    method = "knn",
-                   data = training, 
+                   data = training_knn, 
                    trControl = fitControl,
-                   tuneGrid = knn_grid)
+                   tuneGrid = knn_grid) #add tuneGrid to put in the range of k values we jjust created
 
 knn_fit
-
-knnFunction <- function(k) {
-  knn_grid <- expand.grid(k = k)
-  
-  train(violence_ok ~ .,
-                   method = "knn",
-                   data = training, 
-                   trControl = fitControl,
-                   tuneGrid = knn_grid)
-}
-
-knn_models <- map(seq(1, 101, 5), knnFunction)
-
-test_accuracy <- c()
-
-for (i in 1:length(knn_models)){
-
-test_accuracy[i] <- 1 - sum(abs((as.numeric(predict(knn_models[i], testing)[[1]]) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
-  
-}
 ```
 
-Apply kNN Models to Holdout Data
+#### Apply kNN Models to Holdout Data
+
+Similar to the elastic net example, below is some extra code which will create a model for each k value and test its accuracy on the testing data. We can then plot the results.
+
 ```{r}
-knnFunction <- function(k) {
+knnFunction <- function(k) { #function to train the model. This is basically the same as above, but only runs 1 k value at a time.
+  
   knn_grid <- expand.grid(k = k)
   
   train(violence_ok ~ .,
                    method = "knn",
-                   data = training, 
+                   data = training_knn, 
                    trControl = fitControl,
                    tuneGrid = knn_grid)
 }
 
-knn_models <- map(seq(1, 101, 5), knnFunction)
+knn_models <- map(seq(1, 101, 5), knnFunction) #run the above function for each k value and save results as a list
 
-test_accuracy <- c()
+test_accuracy <- c() # create an empty vector to store the results of the accuracy test below
 
-for (i in 1:length(knn_models)){
+for (i in 1:length(knn_models)){ #for loop to take each model, generate predictions, compare them to the true values, and save the results
 
-test_accuracy[i] <- 1 - sum(abs((as.numeric(predict(knn_models[i], testing)[[1]]) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
+test_accuracy[i] <- 1 - sum(abs((as.numeric(predict(knn_models[i], testing_knn)[[1]]) - 1) - (as.numeric(testing_knn$violence_ok) - 1))) / nrow(testing_knn)
   
 }
 
-as.data.frame(test_accuracy) %>%
-  mutate(k = seq(1, 101, 5)) %>%
+##Plot Results
+as.data.frame(test_accuracy) %>% #save the results as a dataframe
+  mutate(k = seq(1, 101, 5)) %>% #add the k values as a column
   ggplot(aes(k, test_accuracy)) +
   geom_line() +
   labs(x = "K Nearest Neighbors",
