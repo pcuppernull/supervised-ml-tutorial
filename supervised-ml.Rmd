@@ -1,0 +1,199 @@
+---
+title: "Supervised ML Tutorial"
+author: "Pete Cuppernull"
+date: "2/26/2021"
+output: pdf_document
+---
+
+# What is Supervised Learning?
+
+Supervised learning uses both the inputs and outputs of a data generating process to teach a computer to use the inputs to predict the outputs. As a researcher, you provide the computer with both inputs (the independent variables) and outputs (the dependent variables), and the computer figures out how that inputs relate to each other to produce the outputs. Once this _learner_ -- or model -- has been "trained" by your data, you can apply it to new data to generate predictions. 
+
+Unlike unsupervised learning, which does not require the outputs to train a model, supervised learning requires output values. Often, this means a researcher must "hand code" a subset of their data to provide the accurate outcome variables to the computer.
+
+There are a handful of concepts and vocab terms that will be useful for supervised learning:
+
+  - Accuracy -- The accuracy of a learner can be evaluated in many ways. For _classification_ problems, where the learner seeks to assign an observation to a certain outcome category, we can often evaluate the learner accuracy by the percentage of the observations it places into the right category (this is what we will do below). For _regression_ problems, where the outcome variable is continuous and there is therefore not a clear distinction between a "correct" and "incorrect" classification, mean squared error (MSE) is a popular validation choice (there are many others too).  
+  - Interpretability -- some types of learners (like a linear regression model) are interprettable, meaning we as researchers can understand how the model makes predictions. Others, like neural nets, are "black box" models where it is very difficult to determine how the model makes its choices. If you value interprettability, sometime this means choosing a less accurate learner.
+  - Bias-Variance Tradeoff -- it is possible to "overfit" a learner. This is the scenario where the learner gets very good at predicting your training data, but fails to generalize to accurately predict new data! This is a case of a low bias, but high variance model. We usually want to maximize the out-of-sample rediction accuracy. This usually means inducing some bias in the model (intentionally getting some predictions wrong) in order to lower the variance, and thus achieve greater out of sample prediction accuracy. 
+  - Hyperparameters -- these are macro level settings for the model that usually vary by model type.
+
+
+# Code
+
+## Load Libraries
+
+I will be primarily using the `caret` library below. This is a good one-stop-shop package for many ML tasks. It relies and several other packages under the hood, so when you first run the code, it may ask you to install some other packages.
+
+```{r setup}
+library(tidyverse)
+library(caret)
+```
+
+## Import Data
+
+I am using some data from the most recent ANES pilot survey.
+
+```{r}
+data <- read_csv("data/anes_pilot_2020ets_csv.csv")
+
+head(data)
+```
+## Clean Data
+
+I'm going to select some variables to work with. Our outcome variable, `violence_ok`, records a respondent's answer to the following question: 
+
+  "How much do you feel it is justified for people to use violence to pursue their political goals in this country?"
+  
+If the respondent answered "Not at all", the variable is coded as 0. All other responses ("A little", "A moderate amount", "A lot", "A great deal") are coded as 1. 
+
+For independent variables (the model inputs, or _predictors_), I've selected a variety of feeling thermometers (towards presidential candidates, political parties, etc) as well as some questions on economic politicy preferences.
+
+```{r}
+data_clean <- data %>%
+  select(viol2a, fttrump1:ftdemocraticparty, econnow:ineqinc1a) # select relevant variables
+
+data_clean[data_clean == 999] <- NA #replace "999" ("I don't know" responses) with NAs
+
+data_clean <- data_clean %>%
+  na.omit() %>% #remove rows with NAs
+  mutate(violence_ok = as.factor(if_else(viol2a == 1, 0, 1))) %>% #convert original variable to bivariate response, as described above
+  select(-viol2a) #drop original variable
+```
+
+## Set Seed and Split into Training and Testing
+
+Setting the seed is important because we will do a lot of random sampling for supervised learning. This makes out results reproducible.
+
+After setting the seed, we split our data into _Training_ and _Testing_ sets. We will use the Training data to train the model. The Testing data we will use as a final validation step to test our "out of sample" prediction accuracy.
+
+Generally, keeping 80% of the data in training and 20% in testing is a common approach. This can vary however, and 80/20 is not a hard rule.
+
+```{r}
+set.seed(1414)
+
+sample <- sample(nrow(data_clean), nrow(data_clean)*.8) #choose rows from daat_clen to sample
+training <- data_clean[sample,] #save those rows as training
+testing <- data_clean[-sample,] #add all the other rows to testing
+
+training %>%
+  count(violence_ok) #about 65% of respondents condone some level of political violence
+```
+
+
+## Train Learners
+
+I am going to demo three different types of learners. There are literally hundreds of possibilities to choose from (check out the `caret` documentation for a full list!). One approach to supervised learning is to test out a bunch of different learners, see which is the most accurate, and then roll with that one!
+
+### Logit
+
+A logit model is a common choice of a learner for a binomial choice outcome (like we have in this example: it's either 1, or it's 0). It is also relatively interpretable!
+
+For caret, you can set some macro options for the models. Here, I am opting to use "10 Fold Cross Validation". This is a technique that helps reduce the bias in the estimated models.
+
+```{r}
+fitControl <- trainControl(method = "cv",
+             number = 10)
+```
+
+Next, we fit the model. 
+
+```{r}
+logit_fit <- train(violence_ok ~ ., #regress violence_ok onto all other predictors
+                   method = "glm",
+                   family = "binomial",  #method and family here specify a logit model
+                  data = training, #using our training data
+                  trControl = fitControl) #add our macro parameters
+
+logit_fit
+
+```
+The "Accuracy" measure that is returned is from the cross-validated data. To test the prediction accuracy on the holdout data, below I use the model to geenrate new predictions, compare them to the "true" values from the testing data, and see how often we got the prediction right.
+
+```{r}
+1 - sum(abs((as.numeric(predict(logit_fit, testing)) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
+```
+
+So, the logit model makes the correct prediction 87% ofthe time on the testing data. Not bad!
+
+
+
+### Elastic Net
+
+Elastic Net is another common learner type. 
+
+```{r}
+elastic_fit <- train(violence_ok ~ .,
+                   method = "glmnet",
+                  data = training, 
+                  trControl = fitControl)
+
+elastic_fit$results %>%
+  arrange(-Accuracy)
+```
+
+
+kNN
+```{r}
+knn_grid <- expand.grid(k = seq(1, 100, 5))
+
+knn_fit <- train(violence_ok ~ .,
+                   method = "knn",
+                   data = training, 
+                   trControl = fitControl,
+                   tuneGrid = knn_grid)
+
+knn_fit
+
+knnFunction <- function(k) {
+  knn_grid <- expand.grid(k = k)
+  
+  train(violence_ok ~ .,
+                   method = "knn",
+                   data = training, 
+                   trControl = fitControl,
+                   tuneGrid = knn_grid)
+}
+
+knn_models <- map(seq(1, 101, 5), knnFunction)
+
+test_accuracy <- c()
+
+for (i in 1:length(knn_models)){
+
+test_accuracy[i] <- 1 - sum(abs((as.numeric(predict(knn_models[i], testing)[[1]]) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
+  
+}
+```
+
+Apply kNN Models to Holdout Data
+```{r}
+knnFunction <- function(k) {
+  knn_grid <- expand.grid(k = k)
+  
+  train(violence_ok ~ .,
+                   method = "knn",
+                   data = training, 
+                   trControl = fitControl,
+                   tuneGrid = knn_grid)
+}
+
+knn_models <- map(seq(1, 101, 5), knnFunction)
+
+test_accuracy <- c()
+
+for (i in 1:length(knn_models)){
+
+test_accuracy[i] <- 1 - sum(abs((as.numeric(predict(knn_models[i], testing)[[1]]) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
+  
+}
+
+as.data.frame(test_accuracy) %>%
+  mutate(k = seq(1, 101, 5)) %>%
+  ggplot(aes(k, test_accuracy)) +
+  geom_line() +
+  labs(x = "K Nearest Neighbors",
+       y = "Prediction Accuracy",
+       title = "Prediction Accuracy of kNN Learner on Holdout Data")
+```
+
