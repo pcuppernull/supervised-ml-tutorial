@@ -95,7 +95,7 @@ I am going to demo three different types of learners. There are literally hundre
 
 A logit model is a common choice of a learner for a binomial choice outcome (like we have in this example: it's either 1, or it's 0). It is also relatively interpretable, which can be beneficial.
 
-For `caret`, you can set some macro options for the models. Here, I am opting to use "10 Fold Cross Validation". This is a technique that helps you balnce the bias-varoance tradeoff in the estimated models.
+For `caret`, you can set some macro options for the models. Here, I am opting to use "10 Fold Cross Validation". This is a technique that helps you balance the bias-variance tradeoff in the estimated models.
 
 ```{r}
 fitControl <- trainControl(method = "cv",
