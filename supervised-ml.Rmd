@@ -119,7 +119,7 @@ The "Accuracy" measure is from the cross validation procedure. This gives us a g
 1 - sum(abs((as.numeric(predict(logit_fit, testing)) - 1) - (as.numeric(testing$violence_ok) - 1))) / nrow(testing)
 ```
 
-So, the logit model makes the correct prediction 87% of the time on the testing data. Not too bad!
+So, the logit model makes the correct prediction almost 88% of the time on the testing data. Not too bad!
 
 ### Elastic Net
 
@@ -248,4 +248,5 @@ as.data.frame(test_accuracy) %>% #save the results as a dataframe
        y = "Prediction Accuracy",
        title = "Prediction Accuracy of kNN Learner on Holdout Data")
 ```
-kNN performs better than both the logit and elastic net models (aboout 88.6% out-of-sample prediction accuracy.)
+
+
