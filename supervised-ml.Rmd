@@ -7,7 +7,7 @@ output: pdf_document
 
 # What is Supervised Learning?
 
-Supervised learning uses both the inputs and outputs of a data generating process to teach a computer to predict the value of an outcome variable. As a researcher, you provide the computer with both independent variables (the inputs) and dependent variables (the outputs), and the computer figures out how that inputs relate to each other to produce the outputs. Once this model -- or _learner_ -- has been "trained" by your data, you can apply it to new data to generate predictions. 
+Supervised learning uses both the inputs and outputs of a data generating process to teach a computer to predict the value of an outcome variable. As a researcher, you provide the computer with both the values of the independent variables (the inputs) and the dependent variable (the outputs), and the computer figures out how that inputs relate to each other to produce the outputs. Once this model -- or _learner_ -- has been "trained" by your data, you can apply it to new data to generate predictions. 
 
 Unlike unsupervised learning, which does not require the outputs to train a model, supervised learning requires output values. Often, this means a researcher must "hand code" a subset of their data to provide the accurate dependent variable values to the computer.
 
