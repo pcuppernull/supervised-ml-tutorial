@@ -63,6 +63,8 @@ data_clean <- data_clean %>%
   na.omit() %>% #remove rows with NAs
   mutate(violence_ok = as.factor(if_else(viol2a == 1, 0, 1))) %>% #convert original variable to binary response, as described above
   select(-viol2a, -billtax2, -guarinc2, -freemkt2, -freemkt3, -govsize2, -govsize3, -regulate2) #drop some columns
+
+head(data_clean)
 ```
 
 ## Set Seed and Split into Training and Testing
@@ -93,7 +95,7 @@ I am going to demo three different types of learners. There are literally hundre
 
 A logit model is a common choice of a learner for a binomial choice outcome (like we have in this example: it's either 1, or it's 0). It is also relatively interpretable, which can be beneficial.
 
-For `caret`, you can set some macro options for the models. Here, I am opting to use "10 Fold Cross Validation". This is a technique that helps reduce the bias in the estimated models.
+For `caret`, you can set some macro options for the models. Here, I am opting to use "10 Fold Cross Validation". This is a technique that helps you balnce the bias-varoance tradeoff in the estimated models.
 
 ```{r}
 fitControl <- trainControl(method = "cv",
